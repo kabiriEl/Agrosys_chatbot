@@ -8,7 +8,7 @@ __pycache__/
 *.db
 
 # Environnements virtuels
-venv/
+.venv/
 env/
 ENV/
 env_chat/

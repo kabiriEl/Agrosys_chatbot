@@ -3,8 +3,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import os
 import uvicorn
+from rag_utils import get_answer
 
-from rag_utils import load_vector_store, get_answer
+
 from image_predictor import predict_plant_disease
 
 
@@ -13,21 +14,18 @@ from image_predictor import predict_plant_disease
 app = FastAPI()
 
 # Initialiser le retriever
-vector_store, retriever = load_vector_store()
+# vector_store, retriever = load_vector_store()
 
 # Schéma de question texte
 class Question(BaseModel):
     query: str
 
 # Endpoint pour chatbot texte
+
 @app.post("/ask")
 async def ask_question(q: Question):
-    response = get_answer(q.query, retriever)
-    return JSONResponse(
-        content={"answer": response},
-        media_type="application/json; charset=utf-8"
-    )
-
+    response = get_answer(q.query)
+    return JSONResponse(content={"answer": response})
 
 
 

@@ -1,10 +1,14 @@
 services:
   - type: web
-    name: agrosys_chatbot
-    env: python
-    plan: free
+    name: agro-rag-app
+    runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
     envVars:
       - key: GOOGLE_API_KEY
-        sync: true
+        value: AIzaSyDDcS3AzRjEp4w1gEFVeRbzOR_nC3SYfYI
+      - key: PINECONE_API_KEY
+        value: pcsk_4gv5Hg_JtKw4HVkwpJvPQinT3tgVgt6TDaH49uoFe7sg1B2gmyCd4ZzuDpwfG4JsUipfJr
+      - key: PINECONE_ENV
+        value: gcp-starter
+    plan: free

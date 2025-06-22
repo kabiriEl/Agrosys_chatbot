@@ -1,91 +1,97 @@
 import os
 from dotenv import load_dotenv
-from pinecone import Pinecone, ServerlessSpec
+from PyPDF2 import PdfReader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 import google.generativeai as genai
+from google.generativeai import embed_content
+from pinecone import Pinecone, ServerlessSpec
 
-# Charger les variables d'environnement
+# Charger les variables d’environnement
 load_dotenv()
+
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = "agro-index"
 
 # Configurer Gemini
 genai.configure(api_key=GOOGLE_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-gen_model = genai.GenerativeModel("gemini-1.5-flash")  # uniquement pour génération de texte
-
-# Configurer Pinecone v3
+# Initialiser Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
 
-# Créer l'index si nécessaire
+# Créer l’index si inexistant
 if INDEX_NAME not in pc.list_indexes().names():
     pc.create_index(
         name=INDEX_NAME,
         dimension=768,
         metric="cosine",
-        spec=ServerlessSpec(
-            cloud="aws",
-            region="us-east-1"  # Adapte si nécessaire
-        )
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
     )
 
-# Accéder à l’index
 index = pc.Index(INDEX_NAME)
 
-# Génération d'embedding via Gemini
+DATA_DIR = "data"
 
+def load_documents():
+    docs = []
+    for filename in os.listdir(DATA_DIR):
+        if filename.endswith(".pdf"):
+            path = os.path.join(DATA_DIR, filename)
+            reader = PdfReader(path)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() or ""
+            docs.append(text)
+    return docs
+
+def chunk_documents(texts):
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    docs = []
+    for text in texts:
+        chunks = splitter.create_documents([text])
+        docs.extend(chunks)
+    return docs
 
 def generate_embedding(text):
-    response = genai.embed_content(
+    response = embed_content(
         model="models/embedding-001",
         content=text,
         task_type="retrieval_document"
     )
     return response["embedding"]
 
-
-# Indexer une liste de textes
 def index_documents(chunks):
     for i, chunk in enumerate(chunks):
         vector = generate_embedding(chunk)
-        index.upsert(vectors=[(f"doc-{i}", vector, {"text": chunk})])
+        index.upsert(vectors=[{
+            "id": f"doc-{i}",
+            "values": vector,
+            "metadata": {"text": chunk}
+        }])
+    print(f"✅ {len(chunks)} chunks indexés dans Pinecone.")
 
-# Récupérer réponse depuis Gemini avec contexte
 def get_answer(query):
-    try:
-        query_vector = generate_embedding(query)
-        results = index.query(vector=query_vector, top_k=4, include_metadata=True)
-        context = "\n\n".join([match["metadata"]["text"] for match in results["matches"]])
+    query_vector = generate_embedding(query)
+    results = index.query(vector=query_vector, top_k=4, include_metadata=True)
+    context = "\n\n".join([match['metadata']['text'] for match in results['matches']])
 
-        instruction = (
-            "Tu es Felah, un assistant agricole expert et amical.\n"
-            "Réponds dans la langue de la question.\n"
-            "Si c’est une salutation, réponds poliment.\n"
-            "Sinon, donne une réponse claire, courte, structurée, pédagogique.\n"
-            "Termine toujours par : 'N’hésitez pas à poser une autre question.'"
-        )
+    instruction = (
+        "Tu es Felah, un assistant agricole expert et amical.\n"
+        "Réponds dans la langue de la question.\n"
+        "Si c’est une salutation, réponds poliment.\n"
+        "Sinon, donne une réponse claire, courte, structurée, pédagogique.\n"
+        "Termine toujours par : 'N’hésitez pas à poser une autre question.'"
+    )
 
-        prompt = (
-            f"{instruction}\n\n"
-            f"Contexte :\n{context}\n\n"
-            f"Question : {query}\n"
-            f"Réponse :"
-        )
+    prompt = (
+        f"{instruction}\n\n"
+        f"Contexte :\n{context}\n\n"
+        f"Question : {query}\n"
+        f"Réponse :"
+    )
 
-        response = genai.GenerativeModel("gemini-1.5-flash").generate_content(prompt)
-        return response.text
-
-    except Exception as e:
-        print(f"❌ Erreur dans get_answer: {e}")
-        return f"Erreur serveur : {str(e)}"
-
-
-
-
-
-
-
-
+    return model.generate_content(prompt).text
 
 
 
